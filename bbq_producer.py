@@ -78,31 +78,6 @@ def conn_q_csv():
         sys.exit(1)
     finally:
         conn.close
-
-
-        #use channel to publish a message to the queue
-        #ch.basic_publish(exchange="", routing_key=queue_name, body=message)
-
-        # use the channel to publish a message to the queue
-        # every message passes through an exchange
-        #ch.basic_publish(exchange="", routing_key=queue_name, body=message)
-        # print a message to the console for the user
-        #logger.info(f" [x] Sent {message}")
-    
-#except pika.exceptions.AMQPConnectionError as e:
- #       logger.info(f"Error: Connection to RabbitMQ server failed: {e}")
-  #      sys.exit(1)
-   # except Exception as e:
-    #    logger.error(f"Error sending message to {queue_name}: {e}")
-    #finally:
-     #   try:
-      #      # close the connection to the server
-       #     conn.close()
-        #except Exception as e:
-        #    logger.error(f"Error closing connection: {e}")
-# Read tasks from csv and send to RabbitMQ server
-
-  
         
 
 def send_message(channel: str, queue_name: str, message: str):

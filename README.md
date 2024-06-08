@@ -62,7 +62,7 @@ Created: 27May2024
 ![Producer working](BBQ-Producer.png)
 
 ## Screenshot of Producer and Consumer Working
-![Producer and Consumer working](Prodcuer_Consumer.png)
+![Producer and Consumer working](Producer_Consumer.png)
 
 ## Screenshot of Smoker Alert
 ![Smoker Alert](Smoker_Alert.png)

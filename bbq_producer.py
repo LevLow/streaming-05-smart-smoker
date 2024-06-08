@@ -1,24 +1,27 @@
+
 """"
 Levi Lowther
 27May2024
 Producer of messages for a Smart Smoker BBQ system
 
-"""
-
-import csv
+""" 
 import pika
 import sys
 import webbrowser
-import pathlib
+import csv
+import struct
+import time 
+from datetime import datetime
 from util_logger import setup_logger
-
 
 logger, logname = setup_logger(__file__)
 
-# define fuctions
+# use to control whether or not admin page is offered to user.
+# change to true to receive offer, false to remove prompt
+show_offer = True
+
 def offer_rabbitmq_admin_site():
     """Offer to open the RabbitMQ Admin website"""
-    show_offer = True
     if show_offer:
         ans = input("Would you like to monitor RabbitMQ queues? y or n ")
         print()
@@ -26,77 +29,102 @@ def offer_rabbitmq_admin_site():
             webbrowser.open_new("http://localhost:15672/#/queues")
             print()
 
-def conn_q_csv():
+
+def main():
     """
-    this will create our connection to RabbitMQ, Delete existing queues, and make new queues.
-    This will also read our CSV file. 
+    Read a CVS, row by row. Send messages based on the queue the info is coming from 
     """
+   
+    offer_rabbitmq_admin_site()
+
+    logger.info(f'Attempting to access smoker-temps.csv')
 
     try:
+        # access file
+        with open("smoker-temps.csv", newline='') as csvfile:
+            reader = csv.reader(csvfile)
+
+            # Skip header row
+            next(reader)
+
+            # Main section of code where data is reviewed and messages are sent.
+            for row in reader:
+
+                # assign variables from row
+                string_timestamp = row[0]
+                smoker_Temp = row[1]
+                food_A_Temp = row[2]
+                food_B_Temp = row[3]
+
+                               
+                # convert datetime string into a datetime object
+                datetime_timestamp = datetime.strptime(string_timestamp, "%m/%d/%y %H:%M:%S").timestamp()
+                
+                #check for value and send to correct queue
+                if smoker_Temp:
+                    # pack message contents into serialized format
+                    message = struct.pack("!df", datetime_timestamp, float(smoker_Temp))
+                    send_message('localhost', '01-smoker', message)
+
+                # food A
+                if food_A_Temp:
+                    # pack message contents into serialized format
+                    message = struct.pack("!df", datetime_timestamp, float(food_A_Temp))
+                    send_message('localhost', '02-food-A', message)
+
+                # food B
+                if food_B_Temp:
+                    # pack message contents into serialized format
+                    message = struct.pack("!df", datetime_timestamp, float(food_B_Temp))
+                    send_message('localhost', '03-food-B', message)
+
+                time.sleep(.05)
+
+                
+    except Exception as e:
+        logger.info(f'ERROR: {e}')
+
+def send_message(host: str, queue_name: str, message: str):
+    """
+    Creates and sends a message to the queue each execution.
+    This process runs and finishes.
+
+       """
+
+    try:
+        logger.info(f"send_message({host=}, {queue_name=}, {message=})")
         # create a blocking connection to the RabbitMQ server
-        conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        conn = pika.BlockingConnection(pika.ConnectionParameters(host))
+
         # use the connection to create a communication channel
         ch = conn.channel()
+        logger.info(f"connection opened: {host=}, {queue_name=}")
 
-        #declare a new variable name queues with our queue names and a 
-        # function to delete old and make new queues
-        queues = ["01-smoker", "02-food-A", "02-food-B"]
-        for queue_name in queues:
-            ch.queue_delete(queue=queue_name)
-            ch.queue_declare(queue=queue_name, durable=True)
+        # declare a durable queue
+        ch.queue_declare(queue=queue_name, durable=True)
 
+        #publish a message to the queue
+        ch.basic_publish(exchange="", routing_key=queue_name, body=message)
 
-        # Process CSV and send messages to queues
-        file_path = "/Users/levilowther/ds-venv/streaming-05-smart-smoker/smoker-temps.csv"
-        with open(file_path, newline='', encoding='utf-8-sig') as csvfile:
-            reader = csv.DictReader(csvfile)
+        # print a message to the console for the user
+        logger.info(f" [x] Sent {message}")
+
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"Error: Connection to RabbitMQ server failed: {e}")
+        sys.exit(1)
         
-            # define data in CSV
-            for row in reader:
-                timestamp = row['Time (UTC)']
-                smoker_temp_str = row['Channel1']
-                food_a_temp_str = row['Channel2']
-                food_b_temp_str = row['Channel3']
-
-                if smoker_temp_str:
-                    smoker_temp = float(smoker_temp_str)
-                    send_message(ch, "01-smoker", (timestamp, smoker_temp))
-                if food_a_temp_str:
-                    food_a_temp = float(food_a_temp_str)
-                    send_message(ch, "02-food-A", (timestamp, food_a_temp))
-                if food_b_temp_str:
-                    food_b_temp = float(food_b_temp_str)
-                    send_message(ch, "02-food-B", (timestamp, food_b_temp))
-    except FileNotFoundError:
-        logger.error("CSV file not found.")
-        sys.exit(1)
-    except ValueError as e:
-        logger.error(f"Error processing CSV: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
-        sys.exit(1)
     finally:
-        conn.close
+        # close the connection to the server
+        conn.close()
+        logger.info(f"connection closed: {host=}, {queue_name=}")
         
 
-def send_message(channel: str, queue_name: str, message: str):
-    """
-    Publish a message to the specified queue.
+# If this is the program being run, then execute the code below
+if __name__ == "__main__":  
 
-    Parameters:
-        queue_name (str): The name of the queue
-        message (tuple): The message to be sent to the queue
-    """
-    try:
-        channel.basic_publish(exchange="", routing_key=queue_name, body=str(message))
-        logger.info(f"Sent message to {queue_name}: {message}")
-    except Exception as e:
-        logger.error(f"Error sending message to {queue_name}: {e}")
-  
+    # specify file path for data source
+    file_path = 'smoker-temps.csv'
 
-if __name__ == "__main__":
-    offer_rabbitmq_admin_site()
-    conn_q_csv()
-
-
+    # transmit task list
+    logger.info(f'Beginning process: {__name__}')
+    main()
